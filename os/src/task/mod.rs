@@ -83,6 +83,7 @@ impl TaskManager {
     fn run_first_task(&self) -> ! {
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
+        //如果任务启动时间为0，则为首次启动，设置启动时间。
         if task0.start_time == 0 {
             task0.start_time = get_time_ms();
         }
@@ -129,6 +130,8 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+
+            //如果任务启动时间为0，则为首次启动，设置启动时间。
             if inner.tasks[next].start_time == 0 {
                 inner.tasks[next].start_time = get_time_ms();
             }
