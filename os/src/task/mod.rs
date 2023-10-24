@@ -145,12 +145,15 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    /// 增加当前任务的系统调用次数
     fn inc_current_task_call(&self, id: usize) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         inner.tasks[current].syscall_times[id] += 1;
     }
 
+    /// 获取当前任务控制块
     fn current_task(&self) -> TaskControlBlock {
         let inner = self.inner.exclusive_access();
         let current = inner.current_task;
