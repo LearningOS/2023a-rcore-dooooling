@@ -9,19 +9,21 @@
 //! Be careful when you see `__switch` ASM function in `switch.S`. Control flow around this function
 //! might not be what you expect.
 
+use lazy_static::*;
+
+pub use context::TaskContext;
+use switch::__switch;
+pub use task::{TaskControlBlock, TaskStatus};
+
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
+use crate::loader::{get_num_app, init_app_cx};
+use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
+
 mod context;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
-
-use crate::config::MAX_APP_NUM;
-use crate::loader::{get_num_app, init_app_cx};
-use crate::sync::UPSafeCell;
-use lazy_static::*;
-use switch::__switch;
-pub use task::{TaskControlBlock, TaskStatus};
-
-pub use context::TaskContext;
 
 /// The task manager, where all the tasks are managed.
 ///
@@ -54,6 +56,8 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            syscall_times:[0; MAX_SYSCALL_NUM],
+            start_time:0
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -79,6 +83,9 @@ impl TaskManager {
     fn run_first_task(&self) -> ! {
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
+        if task0.start_time == 0 {
+            task0.start_time = get_time_ms();
+        }
         task0.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
         drop(inner);
@@ -122,6 +129,9 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            if inner.tasks[next].start_time == 0 {
+                inner.tasks[next].start_time = get_time_ms();
+            }
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -134,6 +144,17 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+    fn inc_current_task_call(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[id] += 1;
+    }
+
+    fn current_task(&self) -> TaskControlBlock {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current]
     }
 }
 
@@ -168,4 +189,14 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// 获取当前任务控制块
+pub fn current_task() -> TaskControlBlock {
+    TASK_MANAGER.current_task()
+}
+
+///增加当前任务 指定的系统调用次数
+pub fn inc_current_task_call(id: usize) {
+    TASK_MANAGER.inc_current_task_call(id);
 }
