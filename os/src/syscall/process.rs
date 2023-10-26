@@ -5,6 +5,9 @@ use crate::{
         change_program_brk, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
     },
 };
+use crate::mm::MapPermission;
+use crate::task::{current_task_info, current_task_map, current_task_unmap, vaddr_to_paddr};
+use crate::timer::get_time_us;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -24,6 +27,19 @@ pub struct TaskInfo {
     time: usize,
 }
 
+
+impl TaskInfo {
+    /// new
+    #[allow(dead_code)]
+    pub fn new(status: TaskStatus, syscall_times: [u32; MAX_SYSCALL_NUM], time: usize) -> Self {
+        Self {
+            status,
+            syscall_times,
+            time,
+        }
+    }
+}
+
 /// task exits and submit an exit code
 pub fn sys_exit(_exit_code: i32) -> ! {
     trace!("kernel: sys_exit");
@@ -41,30 +57,50 @@ pub fn sys_yield() -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    -1
+    if let Some(phy) = vaddr_to_paddr(ts as usize) {
+        let tv = phy.get_mut();
+        let us = get_time_us();
+        *tv = TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        };
+        0
+    } else { -1 }
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
-pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
-    trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
+    if let Some(phy) = vaddr_to_paddr(ti as usize) {
+        let ti = phy.get_mut();
+        *ti = current_task_info();
+        0
+    } else { -1 }
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    // trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+    if port & !0x7 != 0
+        || port & 0x7 == 0
+        || start & 0xFFusize != 0 {
+        return -1;
+    }
+    let mp = MapPermission::from_bits((port << 1) as u8).unwrap() | MapPermission::U;
+    current_task_map(start.into(), (start + len).into(), mp)
 }
 
 // YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    if start & 0xFFusize != 0{
+        return -1;
+    }
+    current_task_unmap(start.into(), (start + len).into())
 }
+
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
     trace!("kernel: sys_sbrk");

@@ -1,19 +1,22 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
-use super::{frame_alloc, FrameTracker};
-use super::{PTEFlags, PageTable, PageTableEntry};
-use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
-use super::{StepByOne, VPNRange};
-use crate::config::{
-    KERNEL_STACK_SIZE, MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE,
-};
-use crate::sync::UPSafeCell;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
+
 use lazy_static::*;
 use riscv::register::satp;
+
+use crate::config::{
+    KERNEL_STACK_SIZE, MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE,
+};
+use crate::sync::UPSafeCell;
+
+use super::{frame_alloc, FrameTracker};
+use super::{PageTable, PageTableEntry, PTEFlags};
+use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
+use super::{StepByOne, VPNRange};
 
 extern "C" {
     fn stext();
@@ -62,6 +65,47 @@ impl MemorySet {
             MapArea::new(start_va, end_va, MapType::Framed, permission),
             None,
         );
+    }
+
+    /// Assume that no conflicts.
+    pub fn insert_framed_area_checked(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) -> isize {
+        for area in &self.areas {
+            let a = start_va.floor().into()..end_va.ceil().into();
+            if (area.vpn_range.get_start().0..area.vpn_range.get_end().0).any(|f|
+                a.contains(&f)
+            ) {
+                return -1;
+            }
+        }
+        self.push(
+            MapArea::new(start_va, end_va, MapType::Framed, permission),
+            None,
+        );
+        0
+    }
+
+    /// 取消虚拟内存映射
+    pub fn remove_framed_area(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+    ) -> isize {
+        if let Some((idx, _mp)) = self.areas.iter().enumerate().find(|(_, ma)| {
+            ma.vpn_range.get_start() == start_va.floor() && ma.vpn_range.get_end() == end_va.ceil()
+        }) {
+            let ma = self.areas.remove(idx);
+            for vpn in ma.vpn_range {
+                self.page_table.unmap(vpn)
+            }
+            0
+        } else {
+            -1
+        }
     }
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
@@ -263,6 +307,7 @@ impl MemorySet {
         }
     }
 }
+
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
     vpn_range: VPNRange,

@@ -1,8 +1,10 @@
 //! RISC-V timer-related functionality
 
+use riscv::register::time;
+
 use crate::config::CLOCK_FREQ;
 use crate::sbi::set_timer;
-use riscv::register::time;
+
 /// The number of ticks per second
 const TICKS_PER_SEC: usize = 100;
 #[allow(dead_code)]
@@ -20,7 +22,7 @@ pub fn get_time() -> usize {
 /// get current time in milliseconds
 #[allow(dead_code)]
 pub fn get_time_ms() -> usize {
-    time::read() / (CLOCK_FREQ / MSEC_PER_SEC)
+    get_time_us() / 1000
 }
 
 /// get current time in microseconds

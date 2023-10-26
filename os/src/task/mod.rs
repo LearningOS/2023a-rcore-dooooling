@@ -9,20 +9,25 @@
 //! Be careful when you see `__switch` ASM function in `switch.S`. Control flow around this function
 //! might not be what you expect.
 
+use alloc::vec::Vec;
+
+use lazy_static::*;
+
+pub use context::TaskContext;
+use switch::__switch;
+pub use task::{TaskControlBlock, TaskStatus};
+
+use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, PhysAddr, VirtAddr};
+use crate::sync::UPSafeCell;
+use crate::syscall::TaskInfo;
+use crate::timer::get_time_ms;
+use crate::trap::TrapContext;
+
 mod context;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
-
-use crate::loader::{get_app_data, get_num_app};
-use crate::sync::UPSafeCell;
-use crate::trap::TrapContext;
-use alloc::vec::Vec;
-use lazy_static::*;
-use switch::__switch;
-pub use task::{TaskControlBlock, TaskStatus};
-
-pub use context::TaskContext;
 
 /// The task manager, where all the tasks are managed.
 ///
@@ -79,6 +84,9 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        if next_task.start_time == 0 {
+            next_task.start_time = get_time_ms();
+        }
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -140,6 +148,9 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            if inner.tasks[next].start_time == 0 {
+                inner.tasks[next].start_time = get_time_ms();
+            }
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -152,6 +163,54 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+
+    /// 将虚拟地址转换为物理地址
+    fn vaddr_to_paddr(&self, vaddr: usize) -> Option<PhysAddr> {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let task = &inner.tasks[current];
+        let vaddr = VirtAddr::from(vaddr);
+        if let Some(pte) = task.memory_set.translate(vaddr.floor()) {
+            Some(PhysAddr::from(PhysAddr::from(pte.ppn()).0 + vaddr.page_offset()))
+        } else {
+            None
+        }
+    }
+
+    /// 增加对应系统调用的调用次数
+    fn inc_sys_call_time(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let task = &mut inner.tasks[current];
+        task.syscall_times[syscall_id] += 1;
+    }
+
+    /// 获取当前任务信息
+    fn current_task_info(&self) -> TaskInfo {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let task = &inner.tasks[current];
+        TaskInfo::new(
+            task.task_status,
+            task.syscall_times,
+            get_time_ms() - task.start_time,
+        )
+    }
+
+    /// 映射虚拟内存
+    fn current_task_map(&self, va_start: VirtAddr, va_end: VirtAddr, mp: MapPermission) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let task = &mut inner.tasks[current];
+
+        task.memory_set.insert_framed_area_checked(va_start, va_end, mp)
+    }
+    /// 取消虚拟内存映射
+    fn current_task_unmap(&self, va_start: VirtAddr, va_end: VirtAddr) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.remove_framed_area(va_start, va_end)
     }
 }
 
@@ -201,4 +260,29 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// 将虚拟地址转换为物理地址
+pub fn vaddr_to_paddr(vaddr: usize) -> Option<PhysAddr> {
+    TASK_MANAGER.vaddr_to_paddr(vaddr)
+}
+
+/// 增加对应系统调用的调用次数
+pub fn inc_sys_call_time(syscall_id: usize) {
+    TASK_MANAGER.inc_sys_call_time(syscall_id)
+}
+
+/// 获取当前任务信息
+pub fn current_task_info() -> TaskInfo {
+    TASK_MANAGER.current_task_info()
+}
+
+/// 映射虚拟内存
+pub fn current_task_map(va_start: VirtAddr, va_end: VirtAddr, mp: MapPermission) -> isize {
+    TASK_MANAGER.current_task_map(va_start, va_end, mp)
+}
+
+/// 取消虚拟内存映射
+pub fn current_task_unmap(va_start: VirtAddr, va_end: VirtAddr) -> isize {
+    TASK_MANAGER.current_task_unmap(va_start, va_end)
 }
