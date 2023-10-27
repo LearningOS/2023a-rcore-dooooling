@@ -1,13 +1,15 @@
 //! Types related to task management & Functions for completely changing TCB
-use super::TaskContext;
-use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
-use crate::sync::UPSafeCell;
-use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
+
+use crate::config::TRAP_CONTEXT_BASE;
+use crate::mm::{KERNEL_SPACE, MapPermission, MemorySet, PhysAddr, PhysPageNum, VirtAddr};
+use crate::sync::UPSafeCell;
+use crate::trap::{trap_handler, TrapContext};
+
+use super::{KernelStack, kstack_alloc, pid_alloc, PidHandle};
+use super::TaskContext;
 
 /// Task control block structure
 ///
@@ -68,6 +70,10 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+    /// 进程的Stride值
+    pub stride: usize,
+    /// 进程的优先级
+    pub priority: usize,
 }
 
 impl TaskControlBlockInner {
@@ -118,6 +124,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    stride: 0,
+                    priority: 16,
                 })
             },
         };
@@ -162,6 +170,14 @@ impl TaskControlBlock {
         // **** release inner automatically
     }
 
+    /// 根据 elf data 生成一个子进程
+    pub fn spawn(&self, elf_data: &[u8]) -> Arc<Self> {
+        let block = Arc::new(Self::new(elf_data));
+        let mut parent_pcb = self.inner_exclusive_access();
+        parent_pcb.children.push(block.clone());
+        block
+    }
+
     /// parent process fork the child process
     pub fn fork(self: &Arc<Self>) -> Arc<Self> {
         // ---- access parent PCB exclusively
@@ -191,6 +207,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    stride: 0,
+                    priority: 16,
                 })
             },
         });
@@ -235,6 +253,33 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+
+
+    /// 将虚拟地址转换为物理地址
+    pub fn vaddr_to_paddr(&self, vaddr: usize) -> Option<PhysAddr> {
+        let inner = self.inner.exclusive_access();
+        let vaddr = VirtAddr::from(vaddr);
+        if let Some(pte) = inner.memory_set.translate(vaddr.floor()) {
+            Some(PhysAddr::from(PhysAddr::from(pte.ppn()).0 + vaddr.page_offset()))
+        } else {
+            None
+        }
+    }
+
+    /// 虚拟内存映射
+    pub fn map(&self, start_va: VirtAddr,
+               end_va: VirtAddr,
+               permission: MapPermission, ) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        inner.memory_set.insert_framed_area_checked(start_va, end_va, permission)
+    }
+
+    /// 取消虚拟内存映射
+    pub fn unmap(&self, start_va: VirtAddr,
+                 end_va: VirtAddr) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        inner.memory_set.remove_framed_area(start_va, end_va)
     }
 }
 

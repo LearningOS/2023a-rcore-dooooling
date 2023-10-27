@@ -13,6 +13,24 @@
 //!
 //! Be careful when you see `__switch` ASM function in `switch.S`. Control flow around this function
 //! might not be what you expect.
+use alloc::sync::Arc;
+
+use lazy_static::*;
+
+pub use context::TaskContext;
+pub use id::{KernelStack, kstack_alloc, pid_alloc, PidHandle};
+pub use manager::{fetch_task, TaskManager};
+pub use manager::add_task;
+pub use processor::{
+    current_task, current_trap_cx, current_user_token, Processor, run_tasks, schedule,
+    take_current_task,
+};
+use switch::__switch;
+pub use task::{TaskControlBlock, TaskStatus};
+
+use crate::loader::get_app_data_by_name;
+use crate::mm::PhysAddr;
+
 mod context;
 mod id;
 mod manager;
@@ -21,20 +39,6 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::loader::get_app_data_by_name;
-use alloc::sync::Arc;
-use lazy_static::*;
-pub use manager::{fetch_task, TaskManager};
-use switch::__switch;
-pub use task::{TaskControlBlock, TaskStatus};
-
-pub use context::TaskContext;
-pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-pub use manager::add_task;
-pub use processor::{
-    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
-    Processor,
-};
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
@@ -114,4 +118,9 @@ lazy_static! {
 ///Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+/// 将虚拟地址转换为物理地址
+pub fn vaddr_to_paddr(vaddr: usize) -> Option<PhysAddr> {
+    current_task().unwrap().vaddr_to_paddr(vaddr)
 }
