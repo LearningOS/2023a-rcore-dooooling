@@ -1,11 +1,14 @@
-use super::{
-    block_cache_sync_all, get_block_cache, BlockDevice, DirEntry, DiskInode, DiskInodeType,
-    EasyFileSystem, DIRENT_SZ,
-};
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+
 use spin::{Mutex, MutexGuard};
+
+use super::{
+    block_cache_sync_all, BlockDevice, DIRENT_SZ, DirEntry, DiskInode, DiskInodeType,
+    EasyFileSystem, get_block_cache,
+};
+
 /// Virtual filesystem layer over easy-fs
 pub struct Inode {
     block_id: usize,
@@ -49,7 +52,7 @@ impl Inode {
         let mut dirent = DirEntry::empty();
         for i in 0..file_count {
             assert_eq!(
-                disk_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device,),
+                disk_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device),
                 DIRENT_SZ,
             );
             if dirent.name() == name {
@@ -147,7 +150,7 @@ impl Inode {
             for i in 0..file_count {
                 let mut dirent = DirEntry::empty();
                 assert_eq!(
-                    disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
+                    disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device),
                     DIRENT_SZ,
                 );
                 v.push(String::from(dirent.name()));
@@ -182,5 +185,91 @@ impl Inode {
             }
         });
         block_cache_sync_all();
+    }
+
+    /// 增加硬链接
+    pub fn link(&self, name: &str, new_name: &str) -> isize {
+        let mut fs = self.fs.lock();
+        let inode_id = self.read_disk_inode(|disk_inode| {
+            self.find_inode_id(name, disk_inode)
+        });
+        if inode_id.is_none() {
+            return -1;
+        }
+        let (block_id, block_offset) = fs.get_disk_inode_pos(inode_id.unwrap());
+        get_block_cache(block_id as usize, self.block_device.clone())
+            .lock()
+            .modify(block_offset, |disk_inode: &mut DiskInode| disk_inode.link_num += 1);
+        self.modify_disk_inode(|root_inode| {
+            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            let new_size = (file_count + 1) * DIRENT_SZ;
+            self.increase_size(new_size as u32, root_inode, &mut fs);
+            let dirent = DirEntry::new(new_name, inode_id.unwrap());
+            root_inode.write_at(
+                file_count * DIRENT_SZ,
+                dirent.as_bytes(),
+                &self.block_device,
+            );
+        });
+        block_cache_sync_all();
+        0
+    }
+
+    /// 删除硬链接
+    pub fn unlink(&self, name: &str) -> isize {
+        let mut fs = self.fs.lock();
+        let mut inid: Option<u32> = None;
+        let mut v: Vec<DirEntry> = Vec::new();
+        self.modify_disk_inode(|root_inode| {
+            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            for i in 0..file_count {
+                let mut dirent = DirEntry::empty();
+                assert_eq!(
+                    root_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device),
+                    DIRENT_SZ,
+                );
+                if dirent.name() != name {
+                    v.push(dirent);
+                } else {
+                    inid = Some(dirent.inode_id());
+                }
+            }
+        });
+        self.modify_disk_inode(|root_inode| {
+            let size = root_inode.size;
+            let data_blocks_dealloc = root_inode.clear_size(&self.block_device);
+            assert!(data_blocks_dealloc.len() == DiskInode::total_blocks(size) as usize);
+            for data_block in data_blocks_dealloc.into_iter() {
+                fs.dealloc_data(data_block);
+            }
+            self.increase_size((v.len() * DIRENT_SZ) as u32, root_inode, &mut fs);
+            for (i, dirent) in v.iter().enumerate() {
+                root_inode.write_at(i * DIRENT_SZ, dirent.as_bytes(), &self.block_device);
+            }
+        });
+        if inid.is_none() {
+            return -1;
+        }
+        let (block_id, block_offset) = fs.get_disk_inode_pos(inid.unwrap());
+        get_block_cache(block_id as usize, Arc::clone(&self.block_device))
+            .lock()
+            .modify(block_offset, |n: &mut DiskInode| {
+                n.link_num -= 1;
+                if n.link_num == 0 {
+                    let size = n.size;
+                    let data_blocks_dealloc = n.clear_size(&self.block_device);
+                    assert!(data_blocks_dealloc.len() == DiskInode::total_blocks(size) as usize);
+                    for data_block in data_blocks_dealloc.into_iter() {
+                        fs.dealloc_data(data_block);
+                    }
+                }
+            });
+        block_cache_sync_all();
+        0
+    }
+
+    /// link num
+    pub fn link_num(&self) -> u32 {
+        self.read_disk_inode(|disk_inode| disk_inode.link_num)
     }
 }

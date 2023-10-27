@@ -66,6 +66,27 @@ impl MemorySet {
             None,
         );
     }
+    /// Assume that no conflicts.
+    pub fn insert_framed_area_checked(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) -> isize {
+        for area in &self.areas {
+            let a = start_va.floor().into()..end_va.ceil().into();
+            if (area.vpn_range.get_start().0..area.vpn_range.get_end().0).any(|f|
+                a.contains(&f)
+            ) {
+                return -1;
+            }
+        }
+        self.push(
+            MapArea::new(start_va, end_va, MapType::Framed, permission),
+            None,
+        );
+        0
+    }
     /// remove a area
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self
@@ -76,6 +97,25 @@ impl MemorySet {
         {
             area.unmap(&mut self.page_table);
             self.areas.remove(idx);
+        }
+    }
+
+    /// 取消虚拟内存映射
+    pub fn remove_framed_area(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+    ) -> isize {
+        if let Some((idx, _mp)) = self.areas.iter().enumerate().find(|(_, ma)| {
+            ma.vpn_range.get_start() == start_va.floor() && ma.vpn_range.get_end() == end_va.ceil()
+        }) {
+            let ma = self.areas.remove(idx);
+            for vpn in ma.vpn_range {
+                self.page_table.unmap(vpn)
+            }
+            0
+        } else {
+            -1
         }
     }
     /// Add a new MapArea into this MemorySet.
