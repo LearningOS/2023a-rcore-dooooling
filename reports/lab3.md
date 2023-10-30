@@ -3,14 +3,30 @@
 ### 编程作业
 
 #### 作业要求
-
+   - 实现系统调用 spawn，用以创建一个新进程。
+   - 实现stride调度算法
 
 #### 实现过程
-
+   - 系统调用 spawn 的实现调用了  TaskControlBlock 的 new 方法根据elf文件创建一个新的任务控制块，然后将添加到当前任务的子线程集合最后调用 add_task 将其添加到任务调用队列。
 ---
 
 ### 简答作业
-
+   1. 不会轮到p1执行，应为8bit无符号整形会在数值超过255后溢出，导致p2仍然小于p1。
+   2. 由于调度器每次都会调用STRIDE_MIN的进程，并且进程优先级全部 >= 2 且 PASS = BigStride / priority，所以满足上述情况。
+   3. 代码如下
+   ```rust
+      impl PartialOrd for Stride {
+         fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some((self.0 % (u8::MAX / 2)).cmp(&(other.0 % (u8::MAX / 2))))
+         }
+      }
+      impl PartialEq for Stride {
+         fn eq(&self, other: &Self) -> bool {
+            false
+         }
+      }
+      
+   ```
 ---
 
 1. 在完成本次实验的过程（含此前学习的过程）中，我曾分别与以下各位 就（与本次实验相关的）以下方面做过交流，还在代码中对应的位置以注释形式记录了具体的交流对象及内容：
