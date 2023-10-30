@@ -1,16 +1,21 @@
 ## 实验报告 - ch5
 
 ### 编程作业
-
+   
 #### 作业要求
-
+   - 实现三个系统调用 sys_linkat、sys_unlinkat、sys_stat
 
 #### 实现过程
-
+   - sys_link 的实现参照 Inode 的 create 方法，创建 DirEntry 指向同一个 inode_id， 不同的名称。
+   - sys_unlinkat 选择使用 modify_disk_inode 方法遍历根目录，在所有的 DirEntry 中查找名称一致的，将其赋值为 empty。
+   - sys_stat 主要关注 nlink, 在 DiskInode 中添加 nlink 字段，并且在 DiskInode 初始化、添加硬链接以及删除硬链接时，对应修改其数值。
 ---
 
 ### 简答作业
-
+   1. root inode 代表整个文件系统的根目录，如果 root inode 损坏，整个文件系统将会崩溃。
+-   ch7
+   1. ps -ef | grep **
+   2. 可以尝试消息队列，共享内存等。
 ---
 
 1. 在完成本次实验的过程（含此前学习的过程）中，我曾分别与以下各位 就（与本次实验相关的）以下方面做过交流，还在代码中对应的位置以注释形式记录了具体的交流对象及内容：

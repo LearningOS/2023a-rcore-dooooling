@@ -170,7 +170,7 @@ impl File for OSInode {
     fn stat(&self, stat: &mut Stat) {
         let inner = self.inner.exclusive_access();
         stat.mode = StatMode::FILE;
-        stat.nlink = inner.inode.link_num();
+        stat.nlink = inner.inode.nlink();
         stat.dev = 0;
         stat.ino = 0;
     }

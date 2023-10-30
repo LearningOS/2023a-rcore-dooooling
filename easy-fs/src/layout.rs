@@ -89,7 +89,7 @@ pub struct DiskInode {
     pub direct: [u32; INODE_DIRECT_COUNT],
     pub indirect1: u32,
     pub indirect2: u32,
-    pub link_num: u32,
+    pub nlink: u32,
     type_: DiskInodeType,
 }
 
@@ -101,7 +101,7 @@ impl DiskInode {
         self.direct.iter_mut().for_each(|v| *v = 0);
         self.indirect1 = 0;
         self.indirect2 = 0;
-        self.link_num = 1;
+        self.nlink = 1;
         self.type_ = type_;
     }
     /// Whether this inode is a directory
