@@ -1,3 +1,5 @@
+use crate::task::vaddr_to_paddr;
+use crate::timer::get_time_us;
 use crate::{
     config::MAX_SYSCALL_NUM,
     fs::{open_file, OpenFlags},
@@ -162,12 +164,18 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
-    -1
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
+    return if let Some(paddr) = vaddr_to_paddr(ts as usize) {
+        let tv = paddr.get_mut();
+        let us = get_time_us();
+        *tv = TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        };
+        0
+    } else {
+        -1
+    };
 }
 
 /// task_info syscall

@@ -6,8 +6,8 @@ use super::TaskControlBlock;
 use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use crate::fs::{File, Stdin, Stdout};
-use crate::mm::{translated_refmut, MemorySet, KERNEL_SPACE};
-use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::mm::{translated_refmut, MemorySet, PhysAddr, VirtAddr, KERNEL_SPACE};
+use crate::sync::{Condvar, DeadlockChecker, Mutex, Semaphore, UPSafeCell};
 use crate::trap::{trap_handler, TrapContext};
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
@@ -49,6 +49,12 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// deadlock check flag
+    pub deadlock_detect: bool,
+    /// mutex deadlock checker
+    pub mutex_checker: DeadlockChecker,
+    /// mutex deadlock checker
+    pub semaphore_checker: DeadlockChecker,
 }
 
 impl ProcessControlBlockInner {
@@ -119,6 +125,9 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    mutex_checker: DeadlockChecker::new(),
+                    semaphore_checker: DeadlockChecker::new(),
                 })
             },
         });
@@ -245,6 +254,9 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detect: false,
+                    mutex_checker: DeadlockChecker::new(),
+                    semaphore_checker: DeadlockChecker::new(),
                 })
             },
         });
@@ -281,5 +293,15 @@ impl ProcessControlBlock {
     /// get pid
     pub fn getpid(&self) -> usize {
         self.pid.0
+    }
+
+    /// 将虚拟地址转换为物理地址
+    pub fn vaddr_to_paddr(&self, vaddr: usize) -> Option<PhysAddr> {
+        let inner = self.inner.exclusive_access();
+        let vaddr = VirtAddr::from(vaddr);
+        inner
+            .memory_set
+            .translate(vaddr.floor())
+            .map(|pte| PhysAddr::from(PhysAddr::from(pte.ppn()).0 + vaddr.page_offset()))
     }
 }

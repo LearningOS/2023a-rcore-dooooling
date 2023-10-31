@@ -69,6 +69,7 @@ pub fn block_current_and_run_next() {
 }
 
 use crate::board::QEMUExit;
+use crate::mm::PhysAddr;
 
 /// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next(exit_code: i32) {
@@ -203,4 +204,9 @@ pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
     remove_task(Arc::clone(&task));
     trace!("kernel: remove_inactive_task .. remove_timer");
     remove_timer(Arc::clone(&task));
+}
+
+/// 将虚拟地址转换为物理地址
+pub fn vaddr_to_paddr(vaddr: usize) -> Option<PhysAddr> {
+    current_process().vaddr_to_paddr(vaddr)
 }

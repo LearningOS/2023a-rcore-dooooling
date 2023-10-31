@@ -1,7 +1,8 @@
-const MAX_RESOURCE_COUNT: usize = 256;
-const MAX_THREAD_COUNT: usize = 256;
+const MAX_RESOURCE_COUNT: usize = 30;
+const MAX_THREAD_COUNT: usize = 30;
 
-struct DeadlockChecker {
+/// 死锁检查器
+pub struct DeadlockChecker {
     /// 资源数量
     available: [usize; MAX_RESOURCE_COUNT],
     /// 线程已分配资源数量
@@ -11,6 +12,7 @@ struct DeadlockChecker {
 }
 
 impl DeadlockChecker {
+    /// new
     pub fn new() -> Self {
         Self {
             available: [0; MAX_RESOURCE_COUNT],
@@ -18,7 +20,6 @@ impl DeadlockChecker {
             need: [[0; MAX_RESOURCE_COUNT]; MAX_THREAD_COUNT],
         }
     }
-
 
     /// 设置资源可用数量
     pub fn set_resource(&mut self, id: usize, num: usize) {
@@ -39,17 +40,25 @@ impl DeadlockChecker {
         for i in 0..MAX_THREAD_COUNT {
             let mut count = 0;
             for j in 0..MAX_RESOURCE_COUNT {
-                if self.need[i][j] <= work[j] {
+                if finish[i] == false && self.need[i][j] <= work[j] {
                     count += 1;
-                    if count = MAX_RESOURCE_COUNT {
+                    if count == MAX_RESOURCE_COUNT {
                         for j in 0..MAX_RESOURCE_COUNT {
-                            work[j] += self.alloc[i][j];
+                            work[j] += self.allocation[i][j];
                         }
                         finish[i] = true;
                     }
                 }
             }
         }
+        // println!("  --------------------------");
+        // println!(
+        //     "  --------------------------\n  tid  --  {}      rid -- {}",
+        //     tid, rid
+        // );
+        // println!("  need                    {}", self.need[tid][rid]);
+        // println!("  available               {}", self.available[rid]);
+        // println!("  allocation              {}", self.allocation[tid][rid]);
         self.need[tid][rid] -= 1;
         return if (0..MAX_RESOURCE_COUNT).into_iter().all(|idx| finish[idx]) {
             self.allocation[tid][rid] += 1;
