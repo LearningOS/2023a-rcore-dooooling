@@ -152,10 +152,6 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
             .push(Some(Arc::new(Semaphore::new(res_count))));
         process_inner.semaphore_list.len() - 1
     };
-    println!(
-        "set  resource coun count - {}  <==>  rid - {}",
-        res_count, id
-    );
     process_inner.semaphore_checker.set_resource(id, res_count);
     id as isize
 }
@@ -181,10 +177,6 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
         .as_ref()
         .unwrap()
         .tid;
-    println!(
-        "release resource coun tid - {}  <==>  rid - {}",
-        tid, sem_id
-    );
     process_inner
         .semaphore_checker
         .release_resource(tid, sem_id);
