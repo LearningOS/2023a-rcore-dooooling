@@ -1,5 +1,5 @@
-const MAX_RESOURCE_COUNT: usize = 16;
-const MAX_THREAD_COUNT: usize = 16;
+const MAX_RESOURCE_COUNT: usize = 32;
+const MAX_THREAD_COUNT: usize = 32;
 
 /// 死锁检查器
 pub struct DeadlockChecker {
