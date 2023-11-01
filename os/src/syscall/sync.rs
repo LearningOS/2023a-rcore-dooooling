@@ -116,6 +116,10 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     drop(process_inner);
     drop(process);
     mutex.unlock();
+    current_process()
+        .inner_exclusive_access()
+        .mutex_checker
+        .request(tid, mutex_id);
     0
 }
 /// semaphore create syscall
@@ -218,6 +222,10 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
     sem.down();
+    current_process()
+        .inner_exclusive_access()
+        .semaphore_checker
+        .request(tid, sem_id);
     0
 }
 /// condvar create syscall

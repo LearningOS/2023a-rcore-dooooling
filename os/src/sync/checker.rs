@@ -1,5 +1,5 @@
-const MAX_RESOURCE_COUNT: usize = 30;
-const MAX_THREAD_COUNT: usize = 30;
+const MAX_RESOURCE_COUNT: usize = 8;
+const MAX_THREAD_COUNT: usize = 16;
 
 /// 死锁检查器
 pub struct DeadlockChecker {
@@ -37,35 +37,23 @@ impl DeadlockChecker {
         self.need[tid][rid] += 1;
         let mut work = self.available;
         let mut finish = [false; MAX_THREAD_COUNT];
-        for i in 0..MAX_THREAD_COUNT {
-            let mut count = 0;
-            for j in 0..MAX_RESOURCE_COUNT {
-                if finish[i] == false && self.need[i][j] <= work[j] {
-                    count += 1;
-                    if count == MAX_RESOURCE_COUNT {
-                        for j in 0..MAX_RESOURCE_COUNT {
-                            work[j] += self.allocation[i][j];
-                        }
+
+        (0..MAX_THREAD_COUNT).for_each(|_| {
+            (0..MAX_THREAD_COUNT).for_each(|i| {
+                (0..MAX_RESOURCE_COUNT)
+                    .all(|j| finish[i] == false && self.need[i][j] <= work[j])
+                    .then(|| {
+                        (0..MAX_RESOURCE_COUNT).for_each(|j| work[j] += self.allocation[i][j]);
                         finish[i] = true;
-                    }
-                }
-            }
-        }
-        // println!("  --------------------------");
-        // println!(
-        //     "  --------------------------\n  tid  --  {}      rid -- {}",
-        //     tid, rid
-        // );
-        // println!("  need                    {}", self.need[tid][rid]);
-        // println!("  available               {}", self.available[rid]);
-        // println!("  allocation              {}", self.allocation[tid][rid]);
+                    });
+        });
+        (0..MAX_THREAD_COUNT).into_iter().all(|idx| finish[idx])
+    }
+
+    /// 完成资源申请
+    pub fn request(&mut self, tid: usize, rid: usize) {
         self.need[tid][rid] -= 1;
-        return if (0..MAX_RESOURCE_COUNT).into_iter().all(|idx| finish[idx]) {
-            self.allocation[tid][rid] += 1;
-            self.available[rid] -= 1;
-            true
-        } else {
-            false
-        };
+        self.allocation[tid][rid] += 1;
+        self.available[rid] -= 1;
     }
 }
