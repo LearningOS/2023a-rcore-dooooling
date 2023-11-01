@@ -37,12 +37,11 @@ jobs:
           rm -rf ${CARGO_HOME:-$HOME/.cargo}
           mkdir -vp ${CARGO_HOME:-$HOME/.cargo}
           
-          cat << EOF | tee -a ${CARGO_HOME:-$HOME/.cargo}/config
-          [source.crates-io]
+          echo '[source.crates-io]
           replace-with = 'mirror'
+          
           [source.mirror]
-          registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
-          EOF
+          registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"' > ${CARGO_HOME:-$HOME/.cargo}/config
           
           qemu-system-riscv64 --version
           rustup target add riscv64gc-unknown-none-elf
