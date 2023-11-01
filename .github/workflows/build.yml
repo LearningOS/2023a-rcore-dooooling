@@ -34,15 +34,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run tests
         run: |
-          rm -rf ${CARGO_HOME:-$HOME/.cargo}
-          mkdir -vp ${CARGO_HOME:-$HOME/.cargo}
-          
-          echo '[source.crates-io]
-          replace-with = 'mirror'
-          
-          [source.mirror]
-          registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"' > ${CARGO_HOME:-$HOME/.cargo}/config
-          
           qemu-system-riscv64 --version
           rustup target add riscv64gc-unknown-none-elf
           git config --global --add safe.directory /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}
