@@ -1,4 +1,4 @@
-const MAX_RESOURCE_COUNT: usize = 8;
+const MAX_RESOURCE_COUNT: usize = 16;
 const MAX_THREAD_COUNT: usize = 16;
 
 /// 死锁检查器
@@ -39,13 +39,14 @@ impl DeadlockChecker {
         let mut finish = [false; MAX_THREAD_COUNT];
 
         (0..MAX_THREAD_COUNT).for_each(|_| {
-            (0..MAX_THREAD_COUNT).for_each(|i| {
+            (0..MAX_RESOURCE_COUNT).for_each(|i| {
                 (0..MAX_RESOURCE_COUNT)
                     .all(|j| finish[i] == false && self.need[i][j] <= work[j])
                     .then(|| {
                         (0..MAX_RESOURCE_COUNT).for_each(|j| work[j] += self.allocation[i][j]);
                         finish[i] = true;
                     });
+            });
         });
         (0..MAX_THREAD_COUNT).into_iter().all(|idx| finish[idx])
     }
